@@ -307,6 +307,9 @@ func (g *Gateway) toolSaveFlow(ctx context.Context, req mcp.CallToolRequest) (*m
 			return mcp.NewToolResultError("saved but http endpoint failed: " + err.Error()), nil
 		}
 	}
+	if g.Exec != nil {
+		g.Exec.InvalidateFlow(rec.ID)
+	}
 	if g.Hub != nil {
 		g.Hub.NotifyFlowChanged("saved", rec.ID, rec.Name, "mcp")
 	}
@@ -331,6 +334,9 @@ func (g *Gateway) toolDeleteFlow(ctx context.Context, req mcp.CallToolRequest) (
 	}
 	if g.Endpoints != nil {
 		g.Endpoints.RemoveFlow(id)
+	}
+	if g.Exec != nil {
+		g.Exec.InvalidateFlow(id)
 	}
 	if g.Hub != nil {
 		g.Hub.NotifyFlowChanged("deleted", id, "", "mcp")

@@ -18,6 +18,14 @@ type Executor struct {
 	Engine *engine.Engine
 }
 
+// InvalidateFlow 丢弃指定流程的已编译节点缓存（DSL 保存/删除后调用）。
+func (e *Executor) InvalidateFlow(flowID string) {
+	if e == nil || e.Engine == nil {
+		return
+	}
+	e.Engine.Invalidate(flowID)
+}
+
 // ExecuteFlow 按 flowID 加载 DSL 并执行消息。
 func (e *Executor) ExecuteFlow(ctx context.Context, flowID, msgType, data string) (string, error) {
 	rec, err := e.Store.GetFlow(flowID)

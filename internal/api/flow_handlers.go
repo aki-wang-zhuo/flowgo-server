@@ -105,6 +105,9 @@ func (s *Server) HandleSaveFlow(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if s.Exec != nil {
+		s.Exec.InvalidateFlow(rec.ID)
+	}
 	if s.Hub != nil {
 		s.Hub.NotifyFlowChanged("saved", rec.ID, rec.Name, "api")
 	}
@@ -135,6 +138,9 @@ func (s *Server) HandleDeleteFlow(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.Endpoints != nil {
 		s.Endpoints.RemoveFlow(id)
+	}
+	if s.Exec != nil {
+		s.Exec.InvalidateFlow(id)
 	}
 	if s.Hub != nil {
 		s.Hub.NotifyFlowChanged("deleted", id, "", "api")
