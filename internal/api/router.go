@@ -72,6 +72,11 @@ func (s *Server) NewMux() http.Handler {
 	mux.Handle("PUT /api/settings/mcp", auth(http.HandlerFunc(s.HandleSaveMcpSettings)))
 	mux.Handle("GET /api/settings/components", auth(http.HandlerFunc(s.HandleGetComponentManage)))
 	mux.Handle("PUT /api/settings/components", auth(http.HandlerFunc(s.HandleSaveComponentManage)))
+	mux.Handle("GET /api/settings/http-response-templates", auth(http.HandlerFunc(s.HandleGetHttpResponseTemplates)))
+	mux.Handle("PUT /api/settings/http-response-templates", auth(http.HandlerFunc(s.HandleSaveHttpResponseTemplates)))
+	mux.Handle("POST /api/settings/http-response-templates", auth(http.HandlerFunc(s.HandleAddHttpResponseTemplate)))
+	mux.Handle("PUT /api/settings/http-response-templates/{id}", auth(http.HandlerFunc(s.HandleUpdateHttpResponseTemplate)))
+	mux.Handle("DELETE /api/settings/http-response-templates/{id}", auth(http.HandlerFunc(s.HandleDeleteHttpResponseTemplate)))
 
 	return mux
 }
