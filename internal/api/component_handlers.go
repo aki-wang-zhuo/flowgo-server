@@ -25,6 +25,62 @@ func (s *Server) HandleListComponents(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// HandleListComponentDocs GET /api/components/docs
+// 返回当前用户可见节点的编辑器 Markdown 文档（不含 MCP Usage）。
+func (s *Server) HandleListComponentDocs(w http.ResponseWriter, r *http.Request) {
+	user := UserFromContext(r.Context())
+	prefs, err := s.Store.GetComponentPrefs(user.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	locale := types.ParseAcceptLanguage(r.Header.Get("Accept-Language"))
+	defs := components.FilterDefs(engine.DefaultRegistry.ListDefs(), prefs.IsComponentEnabled)
+	items := make([]types.ComponentDocItem, 0, len(defs))
+	for _, d := range defs {
+		loc := types.LocalizeComponentDef(d, locale)
+		items = append(items, types.ComponentDocItem{
+			Type: loc.Type,
+			Doc:  loc.Doc,
+		})
+	}
+	writeJSON(w, http.StatusOK, types.ComponentDocsResponse{Items: items})
+}
+
+// HandleGetComponentDoc GET /api/components/{type}/doc
+// 单节点编辑器文档；禁用节点返回 404。
+func (s *Server) HandleGetComponentDoc(w http.ResponseWriter, r *http.Request) {
+	typeName := strings.TrimSpace(r.PathValue("type"))
+	if typeName == "" {
+		locale := types.ParseAcceptLanguage(r.Header.Get("Accept-Language"))
+		writeError(w, http.StatusBadRequest, types.PickI18n(map[string]string{
+			types.LocaleEnUS: "type required",
+		}, locale, "缺少组件类型"))
+		return
+	}
+	user := UserFromContext(r.Context())
+	prefs, err := s.Store.GetComponentPrefs(user.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !prefs.IsComponentEnabled(typeName) {
+		writeError(w, http.StatusNotFound, "component not found")
+		return
+	}
+	def, ok := engine.DefaultRegistry.GetDef(typeName)
+	if !ok {
+		writeError(w, http.StatusNotFound, "component not found")
+		return
+	}
+	locale := types.ParseAcceptLanguage(r.Header.Get("Accept-Language"))
+	loc := types.LocalizeComponentDef(def, locale)
+	writeJSON(w, http.StatusOK, types.ComponentDocResponse{
+		Type: loc.Type,
+		Doc:  loc.Doc,
+	})
+}
+
 // HandleGetComponentManage GET /api/settings/components
 // 合并：注册表中的节点 + 已停用插件的缓存 Def；插件启用状态以插件清单为准。
 func (s *Server) HandleGetComponentManage(w http.ResponseWriter, r *http.Request) {
