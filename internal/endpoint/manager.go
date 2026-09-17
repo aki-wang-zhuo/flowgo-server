@@ -327,6 +327,7 @@ func (m *Manager) makeHandler(ss *sharedServer, pattern string, allowCors bool) 
 			http.Error(w, "no outgoing edge for route: "+relation, http.StatusBadGateway)
 			return
 		}
+		// 已发布 HTTP 入口：忽略节点 Debug，不采集调试日志
 		out, _, err := m.engine.ExecuteFromWithLogsOpts(ctx, dsl, startID, msg, engine.ExecuteOptions{
 			CacheTrack: engine.CacheTrackPublished,
 		})

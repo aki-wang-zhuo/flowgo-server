@@ -47,6 +47,7 @@ func (e *Executor) ExecuteFlow(ctx context.Context, flowID, msgType, data string
 		return "", fmt.Errorf("entryNode is required")
 	}
 	msg := types.NewMsg(msgType, types.JSON, data, nil)
+	// 发布轨：忽略节点 Debug，不采集调试日志
 	out, _, err := e.Engine.ExecuteFromWithLogsOpts(ctx, rec.PublishedDSL, rec.PublishedDSL.EntryNode, msg, engine.ExecuteOptions{
 		CacheTrack: engine.CacheTrackPublished,
 	})
@@ -83,6 +84,7 @@ func (e *Executor) ExecuteFromNode(ctx context.Context, flowID, nodeID, msgType,
 		msgType = "DEFAULT"
 	}
 	msg := types.NewMsg(msgType, types.JSON, data, nil)
+	// 发布轨：忽略节点 Debug，不采集调试日志
 	out, _, err := e.Engine.ExecuteFromWithLogsOpts(ctx, dsl, nodeID, msg, engine.ExecuteOptions{
 		CacheTrack: engine.CacheTrackPublished,
 	})
