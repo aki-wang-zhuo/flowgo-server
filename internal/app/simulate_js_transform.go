@@ -7,6 +7,7 @@ import (
 
 	"github.com/flowgo/flowgo/api/types"
 	"github.com/flowgo/flowgo/components/transform"
+	"github.com/flowgo/flowgo/engine"
 )
 
 // SimulateJsTransformReq JS 转换节点的调试运行请求。
@@ -15,16 +16,19 @@ type SimulateJsTransformReq struct {
 	NodeID string         `json:"nodeId"`
 	// Body 可选覆盖测试值；空则用节点 configuration.debugValue。
 	Body string `json:"body,omitempty"`
+	// RunOnly 为 true 时只执行本节点，不沿出边继续。
+	RunOnly bool `json:"runOnly,omitempty"`
 }
 
 // SimulateJsTransformResult JS 转换调试运行结果。
 type SimulateJsTransformResult struct {
-	Data string            `json:"data"`
-	Logs []types.DebugLog  `json:"logs"`
+	Data string           `json:"data"`
+	Logs []types.DebugLog `json:"logs"`
 	Meta map[string]string `json:"meta,omitempty"`
 }
 
-// SimulateJsTransform 用 debugValue 作为脚本 msg 入参，从该节点执行并进入后续链路。
+// SimulateJsTransform 用 debugValue 作为脚本 msg 入参，从该节点执行。
+// RunOnly=false 时进入后续链路；RunOnly=true 时只跑本节点。
 func (e *Executor) SimulateJsTransform(ctx context.Context, flowID string, req SimulateJsTransformReq) (*SimulateJsTransformResult, error) {
 	dsl := req.DSL
 	if dsl == nil {
@@ -64,12 +68,15 @@ func (e *Executor) SimulateJsTransform(ctx context.Context, flowID string, req S
 		"debug":       "true",
 		"jsTransform": "true",
 	})
-	out, logs, err := e.Engine.ExecuteFromWithLogs(ctx, dsl, req.NodeID, msg)
+	out, logs, err := e.Engine.ExecuteFromWithLogsOpts(ctx, dsl, req.NodeID, msg, engine.ExecuteOptions{
+		OnlyStart: req.RunOnly,
+	})
 	result := &SimulateJsTransformResult{
 		Logs: logs,
 		Meta: map[string]string{
-			"body":   body,
-			"nodeId": req.NodeID,
+			"body":    body,
+			"nodeId":  req.NodeID,
+			"runOnly": fmt.Sprintf("%v", req.RunOnly),
 		},
 	}
 	if err != nil {

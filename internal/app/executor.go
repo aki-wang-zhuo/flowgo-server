@@ -275,6 +275,8 @@ type SimulateHttpClientReq struct {
 	NodeID string         `json:"nodeId"`
 	// Body 可选覆盖本次实际请求体；空则用节点 configuration.debugValue。不走 body 模板。
 	Body string `json:"body,omitempty"`
+	// RunOnly 为 true 时只执行本节点，不沿出边继续。
+	RunOnly bool `json:"runOnly,omitempty"`
 }
 
 // SimulateHttpClientResult HTTP 客户端调试运行结果。
@@ -284,7 +286,8 @@ type SimulateHttpClientResult struct {
 	Meta map[string]string `json:"meta,omitempty"`
 }
 
-// SimulateHttpClient 用 debugValue 作为本次实际 HTTP 请求体，从该节点执行并进入后续链路。
+// SimulateHttpClient 用 debugValue 作为本次实际 HTTP 请求体，从该节点执行。
+// RunOnly=false 时进入后续链路；RunOnly=true 时只跑本节点。
 // 不渲染节点 body 模板；真实部署 / HTTP 入口触发仍走模板。
 func (e *Executor) SimulateHttpClient(ctx context.Context, flowID string, req SimulateHttpClientReq) (*SimulateHttpClientResult, error) {
 	dsl := req.DSL
@@ -325,12 +328,15 @@ func (e *Executor) SimulateHttpClient(ctx context.Context, flowID string, req Si
 		"debug":      "true",
 		"httpClient": "true",
 	})
-	out, logs, err := e.Engine.ExecuteFromWithLogs(ctx, dsl, req.NodeID, msg)
+	out, logs, err := e.Engine.ExecuteFromWithLogsOpts(ctx, dsl, req.NodeID, msg, engine.ExecuteOptions{
+		OnlyStart: req.RunOnly,
+	})
 	result := &SimulateHttpClientResult{
 		Logs: logs,
 		Meta: map[string]string{
-			"body":   body,
-			"nodeId": req.NodeID,
+			"body":    body,
+			"nodeId":  req.NodeID,
+			"runOnly": fmt.Sprintf("%v", req.RunOnly),
 		},
 	}
 	if err != nil {
