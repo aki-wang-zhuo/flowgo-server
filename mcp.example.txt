@@ -1,32 +1,15 @@
-# MCP 配置：本机 OAuth（推荐）或静态 API Key
+# MCP 配置：本仓库默认静态 API Key；OAuth 仍可用作备用
 #
-# 项目级：.cursor/mcp.json
+# 项目级：.cursor/mcp.json（已按方式 B 配置）
 #
-# ========== 方式 A：OAuth 浏览器登录（主流）==========
+# ========== 方式 B：静态 API Key（本仓库默认）==========
 # 1. 启动 flowgo-server（默认 http://127.0.0.1:8090）
-# 2. mcp.json 只写 URL，不要写 headers：
-#    {
-#      "mcpServers": {
-#        "FlowGo": { "url": "http://127.0.0.1:8090/mcp" }
-#      }
-#    }
-# 3. Cursor MCP 面板点 Connect / Authenticate → 浏览器打开授权页
-# 4. 使用 FlowGo 账号登录（默认 admin / admin）→ 授权后 Cursor 自动保存 token
-#
-# 相关端点（本机 HTTP 可接受；上线请 HTTPS）：
-#   GET  /.well-known/oauth-protected-resource
-#   GET  /.well-known/oauth-authorization-server
-#   POST /oauth/register
-#   GET  /oauth/authorize
-#   POST /oauth/token
-#
-# 可选环境变量：
-#   FLOWGO_PUBLIC_BASE_URL=http://127.0.0.1:8090
-#
-# ========== 方式 B：静态 API Key（脚本 / 备用）==========
-# 1. POST /api/apikeys 创建密钥
-# 2. 环境变量 FLOWGO_API_KEY=<key>
-# 3. mcp.json：
+# 2. 登录拿到 JWT：
+#    POST /api/auth/login  {"username":"admin","password":"admin"}
+# 3. 创建密钥（Authorization: Bearer <jwt>）：
+#    POST /api/apikeys  {"name":"cursor-mcp"}
+#    响应里的 key 只显示一次，写入本机环境变量 FLOWGO_API_KEY（勿提交 Git）
+# 4. mcp.json：
 #    {
 #      "mcpServers": {
 #        "FlowGo": {
@@ -35,5 +18,20 @@
 #        }
 #      }
 #    }
+# 5. 改环境变量或 mcp.json 后：Cursor MCP 面板重载，或重启 Cursor
 #
-# 注意：勿将明文密钥提交到 Git。重启服务后 OAuth 动态客户端与 refresh 在内存中会丢失，需重新授权。
+# Windows 用户级环境变量示例（PowerShell）：
+#   [System.Environment]::SetEnvironmentVariable('FLOWGO_API_KEY','<key>','User')
+#
+# ========== 方式 A：OAuth 浏览器登录（备用）==========
+# 1. mcp.json 只写 URL，不要写 headers
+# 2. Cursor MCP 面板 Connect / Authenticate → 浏览器授权
+# 3. 相关端点：
+#    GET  /.well-known/oauth-protected-resource
+#    GET  /.well-known/oauth-authorization-server
+#    POST /oauth/register
+#    GET  /oauth/authorize
+#    POST /oauth/token
+# 可选：FLOWGO_PUBLIC_BASE_URL=http://127.0.0.1:8090
+#
+# 注意：勿将明文密钥提交到 Git。OAuth 动态客户端与 refresh 在内存中，重启服务后需重新授权。
