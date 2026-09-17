@@ -265,7 +265,7 @@ func (e *Executor) SimulateInject(ctx context.Context, flowID string, req Simula
 type SimulateHttpClientReq struct {
 	DSL    *types.FlowDSL `json:"dsl,omitempty"`
 	NodeID string         `json:"nodeId"`
-	// Body 可选覆盖调试体；空则用节点 configuration.debugValue。
+	// Body 可选覆盖本次实际请求体；空则用节点 configuration.debugValue。不走 body 模板。
 	Body string `json:"body,omitempty"`
 }
 
@@ -276,8 +276,8 @@ type SimulateHttpClientResult struct {
 	Meta map[string]string `json:"meta,omitempty"`
 }
 
-// SimulateHttpClient 用 debugValue 作为上游消息，从 HTTP 客户端节点执行并进入后续链路。
-// debugValue 仅用于本次调试，不改变节点真实请求逻辑。
+// SimulateHttpClient 用 debugValue 作为本次实际 HTTP 请求体，从该节点执行并进入后续链路。
+// 不渲染节点 body 模板；真实部署 / HTTP 入口触发仍走模板。
 func (e *Executor) SimulateHttpClient(ctx context.Context, flowID string, req SimulateHttpClientReq) (*SimulateHttpClientResult, error) {
 	dsl := req.DSL
 	if dsl == nil {

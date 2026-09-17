@@ -326,7 +326,7 @@ func (s *Server) HandleDebugInject(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleDebugHttpClient POST /api/flows/{id}/debug/http-client
-// 用节点 debugValue 作为上游消息，从 HTTP 客户端节点执行后续链路。
+// 用节点 debugValue 作为实际请求体（不走 body 模板），从该 HTTP 客户端节点执行后续链路。
 func (s *Server) HandleDebugHttpClient(w http.ResponseWriter, r *http.Request) {
 	user := UserFromContext(r.Context())
 	id := r.PathValue("id")
