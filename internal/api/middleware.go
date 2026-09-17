@@ -54,6 +54,7 @@ type FlowExecutor interface {
 	SimulateHttpRoute(ctx context.Context, flowID string, req app.SimulateHttpRouteReq) (*app.SimulateHttpRouteResult, error)
 	SimulateInject(ctx context.Context, flowID string, req app.SimulateInjectReq) (*app.SimulateInjectResult, error)
 	SimulateHttpClient(ctx context.Context, flowID string, req app.SimulateHttpClientReq) (*app.SimulateHttpClientResult, error)
+	SimulateJsTransform(ctx context.Context, flowID string, req app.SimulateJsTransformReq) (*app.SimulateJsTransformResult, error)
 	// InvalidateFlow 丢弃指定流程的已编译节点缓存（保存/删除后调用）。
 	InvalidateFlow(flowID string)
 }

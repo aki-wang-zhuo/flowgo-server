@@ -48,6 +48,7 @@ func (s *Server) NewMux() http.Handler {
 	mux.Handle("POST /api/flows/{id}/debug/http-route", auth(http.HandlerFunc(s.HandleDebugHttpRoute)))
 	mux.Handle("POST /api/flows/{id}/debug/inject", auth(http.HandlerFunc(s.HandleDebugInject)))
 	mux.Handle("POST /api/flows/{id}/debug/http-client", auth(http.HandlerFunc(s.HandleDebugHttpClient)))
+	mux.Handle("POST /api/flows/{id}/debug/js-transform", auth(http.HandlerFunc(s.HandleDebugJsTransform)))
 
 	mux.Handle("GET /api/flow-groups", auth(http.HandlerFunc(s.HandleListGroups)))
 	mux.Handle("POST /api/flow-groups", auth(http.HandlerFunc(s.HandleCreateGroup)))

@@ -365,3 +365,38 @@ func (s *Server) HandleDebugHttpClient(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, status, resp)
 }
+
+// HandleDebugJsTransform POST /api/flows/{id}/debug/js-transform
+// 用节点 debugValue 作为脚本 msg 入参，从该 JS 转换节点执行后续链路。
+func (s *Server) HandleDebugJsTransform(w http.ResponseWriter, r *http.Request) {
+	user := UserFromContext(r.Context())
+	id := r.PathValue("id")
+	if !user.CanAccessFlow(id) {
+		writeError(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	if s.Exec == nil {
+		writeError(w, http.StatusServiceUnavailable, "executor not ready")
+		return
+	}
+	var req app.SimulateJsTransformReq
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	out, err := s.Exec.SimulateJsTransform(r.Context(), id, req)
+	if out == nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	status := http.StatusOK
+	resp := map[string]any{
+		"data": out.Data,
+		"logs": out.Logs,
+		"meta": out.Meta,
+	}
+	if err != nil {
+		resp["error"] = err.Error()
+	}
+	writeJSON(w, status, resp)
+}
