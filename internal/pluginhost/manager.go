@@ -13,6 +13,7 @@ import (
 	"github.com/flowgo/flowgo/components"
 	"github.com/flowgo/flowgo/engine"
 	"github.com/flowgo/flowgo-node/sdk"
+	"github.com/flowgo/flowgo-server/internal/componentdocs"
 )
 
 // Manifest 插件落盘元数据。
@@ -35,6 +36,7 @@ type Manager struct {
 	reg    *engine.Registry
 	loaded map[string]*loadedPlugin
 	locale string // 最近一次操作语言（LoadAll 用默认）
+	docs   *componentdocs.Store
 }
 
 type loadedPlugin struct {
@@ -44,12 +46,14 @@ type loadedPlugin struct {
 }
 
 // NewManager 创建插件管理器；dir 为插件根目录（如 data/plugins）。
-func NewManager(dir string, reg *engine.Registry) *Manager {
+// docs 可为 nil；非空时 zip/目录中的节点 MD 会复制到 docs 目录并 Reload。
+func NewManager(dir string, reg *engine.Registry, docs *componentdocs.Store) *Manager {
 	return &Manager{
 		dir:     dir,
 		reg:     reg,
 		loaded:  make(map[string]*loadedPlugin),
 		locale:  types.DefaultLocale,
+		docs:    docs,
 	}
 }
 
@@ -71,7 +75,10 @@ func (m *Manager) LoadAll() {
 		if !e.IsDir() {
 			continue
 		}
-		if err := m.loadFromDir(filepath.Join(m.dir, e.Name()), false); err != nil {
+		pluginPath := filepath.Join(m.dir, e.Name())
+		// 启动时把各插件目录内残留的 MD 同步到 data/docs
+		m.syncPluginDocs(pluginPath)
+		if err := m.loadFromDir(pluginPath, false); err != nil {
 			log.Printf("plugin: load %s: %v", e.Name(), err)
 		}
 	}
@@ -226,6 +233,8 @@ func (m *Manager) installFile(fileName string, r io.Reader, locale string) (*Man
 		_ = os.RemoveAll(destDir)
 		return nil, err
 	}
+	// zip/目录中的 *_zh.md / *_en.md 复制到统一文档目录
+	m.syncPluginDocs(destDir)
 	if err := m.loadFromDir(destDir, true); err != nil {
 		_ = os.RemoveAll(destDir)
 		return nil, err
@@ -327,6 +336,16 @@ func (m *Manager) unloadLocked(lp *loadedPlugin) {
 		_ = lp.client.Close()
 	}
 	delete(m.loaded, lp.manifest.ID)
+}
+
+// syncPluginDocs 将插件目录中的节点文档复制到 DocStore 目录。
+func (m *Manager) syncPluginDocs(pluginDir string) {
+	if m.docs == nil {
+		return
+	}
+	if err := m.docs.CopyDocsFromDir(pluginDir); err != nil {
+		log.Printf("plugin: sync docs from %s: %v", pluginDir, err)
+	}
 }
 
 func findDef(reg *engine.Registry, typeName string) *engineDefLite {

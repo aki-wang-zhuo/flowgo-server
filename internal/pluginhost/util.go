@@ -146,7 +146,9 @@ func findBinary(dir string) (string, error) {
 			continue
 		}
 		name := strings.ToLower(e.Name())
-		if strings.HasSuffix(name, ".so") || strings.HasSuffix(name, ".dll") || strings.HasSuffix(name, ".dylib") {
+		// 文档 Markdown、共享库不计入可执行文件
+		if strings.HasSuffix(name, ".md") ||
+			strings.HasSuffix(name, ".so") || strings.HasSuffix(name, ".dll") || strings.HasSuffix(name, ".dylib") {
 			continue
 		}
 		bins = append(bins, filepath.Join(dir, e.Name()))
@@ -181,7 +183,9 @@ func unzipPlugin(zipPath, destDir string) (binName string, err error) {
 		if lower == "manifest.json" {
 			continue
 		}
-		if strings.HasSuffix(lower, ".so") || strings.HasSuffix(lower, ".dll") || strings.HasSuffix(lower, ".dylib") {
+		// 文档随 zip 解压保留，但不作为可执行候选
+		if strings.HasSuffix(lower, ".md") ||
+			strings.HasSuffix(lower, ".so") || strings.HasSuffix(lower, ".dll") || strings.HasSuffix(lower, ".dylib") {
 			continue
 		}
 		candidates = append(candidates, base)

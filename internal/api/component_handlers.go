@@ -27,6 +27,7 @@ func (s *Server) HandleListComponents(w http.ResponseWriter, r *http.Request) {
 
 // HandleListComponentDocs GET /api/components/docs
 // 返回当前用户可见节点的编辑器 Markdown 文档（不含 MCP Usage）。
+// 正文来自服务端内存 DocStore（磁盘 MD > 内置 embed > Def 内嵌）。
 func (s *Server) HandleListComponentDocs(w http.ResponseWriter, r *http.Request) {
 	user := UserFromContext(r.Context())
 	prefs, err := s.Store.GetComponentPrefs(user.ID)
@@ -38,17 +39,22 @@ func (s *Server) HandleListComponentDocs(w http.ResponseWriter, r *http.Request)
 	defs := components.FilterDefs(engine.DefaultRegistry.ListDefs(), prefs.IsComponentEnabled)
 	items := make([]types.ComponentDocItem, 0, len(defs))
 	for _, d := range defs {
-		loc := types.LocalizeComponentDef(d, locale)
+		doc := ""
+		if s.Docs != nil {
+			doc = s.Docs.Get(d.Type, locale, d)
+		} else {
+			doc = strings.TrimSpace(types.LocalizeComponentDef(d, locale).Doc)
+		}
 		items = append(items, types.ComponentDocItem{
-			Type: loc.Type,
-			Doc:  loc.Doc,
+			Type: d.Type,
+			Doc:  doc,
 		})
 	}
 	writeJSON(w, http.StatusOK, types.ComponentDocsResponse{Items: items})
 }
 
 // HandleGetComponentDoc GET /api/components/{type}/doc
-// 单节点编辑器文档；禁用节点返回 404。
+// 单节点编辑器文档；禁用节点返回 404。无文档时 doc 为空串。
 func (s *Server) HandleGetComponentDoc(w http.ResponseWriter, r *http.Request) {
 	typeName := strings.TrimSpace(r.PathValue("type"))
 	if typeName == "" {
@@ -74,10 +80,37 @@ func (s *Server) HandleGetComponentDoc(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	locale := types.ParseAcceptLanguage(r.Header.Get("Accept-Language"))
-	loc := types.LocalizeComponentDef(def, locale)
+	doc := ""
+	if s.Docs != nil {
+		doc = s.Docs.Get(typeName, locale, def)
+	} else {
+		doc = strings.TrimSpace(types.LocalizeComponentDef(def, locale).Doc)
+	}
 	writeJSON(w, http.StatusOK, types.ComponentDocResponse{
-		Type: loc.Type,
-		Doc:  loc.Doc,
+		Type: typeName,
+		Doc:  doc,
+	})
+}
+
+// HandleReloadComponentDocs POST /api/components/docs/reload
+// 重新扫描 data/docs 载入内存（供面板「刷新文档」）。
+func (s *Server) HandleReloadComponentDocs(w http.ResponseWriter, r *http.Request) {
+	locale := types.ParseAcceptLanguage(r.Header.Get("Accept-Language"))
+	if s.Docs == nil {
+		writeError(w, http.StatusNotImplemented, types.PickI18n(map[string]string{
+			types.LocaleEnUS: "Doc store is not enabled",
+		}, locale, "文档库未启用"))
+		return
+	}
+	if err := s.Docs.Reload(); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status": "ok",
+		"message": types.PickI18n(map[string]string{
+			types.LocaleEnUS: "Component docs reloaded into memory",
+		}, locale, "节点文档已重新载入内存"),
 	})
 }
 

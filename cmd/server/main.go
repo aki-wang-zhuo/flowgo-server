@@ -8,9 +8,11 @@ import (
 	"strings"
 
 	"github.com/flowgo/flowgo/engine"
+	"github.com/flowgo/flowgo/components/nodedocs"
 	"github.com/flowgo/flowgo-server/internal/api"
 	"github.com/flowgo/flowgo-server/internal/app"
 	"github.com/flowgo/flowgo-server/internal/auth"
+	"github.com/flowgo/flowgo-server/internal/componentdocs"
 	"github.com/flowgo/flowgo-server/internal/config"
 	"github.com/flowgo/flowgo-server/internal/endpoint"
 	mcppkg "github.com/flowgo/flowgo-server/internal/mcp"
@@ -39,11 +41,19 @@ func main() {
 	epMgr := endpoint.NewManager(st, eng)
 
 	pluginDir := filepath.Join(cfg.DataDir, "plugins")
+	docsDir := filepath.Join(cfg.DataDir, "docs")
 	_ = os.MkdirAll(pluginDir, 0o755)
-	pluginMgr := pluginhost.NewManager(pluginDir, engine.DefaultRegistry)
+	_ = os.MkdirAll(docsDir, 0o755)
+
+	docStore := componentdocs.New(docsDir, nodedocs.BuiltinMap())
+	if err := docStore.Reload(); err != nil {
+		log.Printf("componentdocs: initial reload: %v", err)
+	}
+
+	pluginMgr := pluginhost.NewManager(pluginDir, engine.DefaultRegistry, docStore)
 	pluginMgr.LoadAll()
 
-	apiSrv := &api.Server{Auth: authSvc, Store: st, Exec: exec, Hub: hub, Endpoints: epMgr, Plugins: pluginMgr}
+	apiSrv := &api.Server{Auth: authSvc, Store: st, Exec: exec, Hub: hub, Endpoints: epMgr, Plugins: pluginMgr, Docs: docStore}
 
 	mux := http.NewServeMux()
 	mux.Handle("/", apiSrv.NewMux())

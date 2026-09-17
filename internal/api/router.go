@@ -32,6 +32,7 @@ func (s *Server) NewMux() http.Handler {
 
 	mux.Handle("GET /api/components", auth(http.HandlerFunc(s.HandleListComponents)))
 	mux.Handle("GET /api/components/docs", auth(http.HandlerFunc(s.HandleListComponentDocs)))
+	mux.Handle("POST /api/components/docs/reload", auth(http.HandlerFunc(s.HandleReloadComponentDocs)))
 	mux.Handle("GET /api/components/{type}/doc", auth(http.HandlerFunc(s.HandleGetComponentDoc)))
 	mux.Handle("GET /api/components/marketplace", auth(http.HandlerFunc(s.HandleListMarketplaceComponents)))
 	mux.Handle("POST /api/components/marketplace/install", auth(http.HandlerFunc(s.HandleInstallMarketplaceComponent)))

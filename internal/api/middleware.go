@@ -8,6 +8,7 @@ import (
 	"github.com/flowgo/flowgo/api/types"
 	"github.com/flowgo/flowgo-server/internal/app"
 	"github.com/flowgo/flowgo-server/internal/auth"
+	"github.com/flowgo/flowgo-server/internal/componentdocs"
 	"github.com/flowgo/flowgo-server/internal/store"
 	"github.com/flowgo/flowgo-server/internal/ws"
 )
@@ -27,6 +28,7 @@ type Server struct {
 	Hub       *ws.Hub
 	Endpoints EndpointSync // 可选：HTTP 入口随流程启停
 	Plugins   PluginInstaller
+	Docs      *componentdocs.Store // 节点编辑器 Markdown（内存）
 }
 
 // PluginInstaller 本地节点插件安装与生命周期（方案 B）。
