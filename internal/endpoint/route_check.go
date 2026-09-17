@@ -43,7 +43,7 @@ func (e *RouteConflictError) Error() string {
 		owner = fmt.Sprintf("%s（%s）", e.OwnerFlowName, e.OwnerFlowID)
 	}
 	return fmt.Sprintf(
-		"HTTP 路由冲突：%s 上的 %s 已被流程「%s」占用，请更换端口或路径后再保存",
+		"HTTP 路由冲突：%s 上的 %s 已被流程「%s」占用，请更换端口或路径后再发布",
 		e.Addr, e.Pattern, owner,
 	)
 }

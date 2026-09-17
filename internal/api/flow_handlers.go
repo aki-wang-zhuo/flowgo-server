@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/flowgo/flowgo/api/types"
+	"github.com/flowgo/flowgo/engine"
 	"github.com/flowgo/flowgo-server/internal/app"
 	"github.com/flowgo/flowgo-server/internal/store"
 )
@@ -67,14 +68,6 @@ func (s *Server) HandleSaveFlow(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 保存前校验 HTTP 路由：同端口可共享，同端口+同路径则拒绝且不落库
-	if s.Endpoints != nil {
-		if err := s.Endpoints.CheckHTTPRoutes(dsl.ID, &dsl); err != nil {
-			writeError(w, http.StatusConflict, err.Error())
-			return
-		}
-	}
-
 	rec, err := s.Store.SaveFlow(user.ID, &dsl)
 	if errors.Is(err, store.ErrFlowLocked) {
 		writeError(w, http.StatusConflict, err.Error())
@@ -99,14 +92,8 @@ func (s *Server) HandleSaveFlow(w http.ResponseWriter, r *http.Request) {
 			user.FlowIDs = ids
 		}
 	}
-	if s.Endpoints != nil {
-		if err := s.Endpoints.SyncFlow(rec); err != nil {
-			writeError(w, http.StatusBadRequest, "flow saved but http endpoint failed: "+err.Error())
-			return
-		}
-	}
 	if s.Exec != nil {
-		s.Exec.InvalidateFlow(rec.ID)
+		s.Exec.InvalidateFlowTrack(rec.ID, engine.CacheTrackDraft)
 	}
 	if s.Hub != nil {
 		s.Hub.NotifyFlowChanged("saved", rec.ID, rec.Name, "api")
@@ -219,6 +206,10 @@ func (s *Server) HandleExecuteFlow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out, err := s.Exec.ExecuteFlow(r.Context(), id, req.Type, req.Data)
+	if errors.Is(err, store.ErrNotPublished) {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -252,6 +243,10 @@ func (s *Server) HandleExecuteFromNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out, err := s.Exec.ExecuteFromNode(r.Context(), id, req.NodeID, req.Type, req.Data)
+	if errors.Is(err, store.ErrNotPublished) {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

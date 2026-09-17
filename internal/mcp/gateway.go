@@ -12,6 +12,7 @@ import (
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
 	"github.com/flowgo/flowgo/api/types"
+	"github.com/flowgo/flowgo/engine"
 	"github.com/flowgo/flowgo-server/internal/api"
 	"github.com/flowgo/flowgo-server/internal/auth"
 	"github.com/flowgo/flowgo-server/internal/oauth"
@@ -119,9 +120,38 @@ func (g *Gateway) registerTools() {
 	), g.toolPatchActiveFlow)
 
 	g.server.AddTool(mcp.NewTool("save_flow",
-		mcp.WithDescription("保存流程图（JSON DSL 字符串）；新建需 flowCreate，更新需 flowUpdate"),
+		mcp.WithDescription("保存流程草稿（JSON DSL 字符串），不发布、不改线上 HTTP 入口；新建需 flowCreate，更新需 flowUpdate"),
 		mcp.WithString("dsl", mcp.Required(), mcp.Description("FlowDSL JSON")),
 	), g.toolSaveFlow)
+
+	g.server.AddTool(mcp.NewTool("publish_flow",
+		mcp.WithDescription("将已保存的草稿发布为线上版本并同步 HTTP 入口；未发布的流程不会监听。需 flowUpdate"),
+		mcp.WithString("id", mcp.Required(), mcp.Description("流程 ID")),
+		mcp.WithString("note", mcp.Description("可选发布说明")),
+	), g.toolPublishFlow)
+
+	g.server.AddTool(mcp.NewTool("discard_draft",
+		mcp.WithDescription("放弃草稿，用当前已发布版本覆盖草稿。需 flowUpdate"),
+		mcp.WithString("id", mcp.Required(), mcp.Description("流程 ID")),
+	), g.toolDiscardDraft)
+
+	g.server.AddTool(mcp.NewTool("list_publish_history",
+		mcp.WithDescription("列出流程发布历史（含当前已发布版本）。需 flowRead"),
+		mcp.WithString("id", mcp.Required(), mcp.Description("流程 ID")),
+		mcp.WithBoolean("includeDsl", mcp.Description("是否附带各版本 DSL，默认 false")),
+	), g.toolListPublishHistory)
+
+	g.server.AddTool(mcp.NewTool("rollback_publish",
+		mcp.WithDescription("将线上已发布版本回滚到历史中的某 version；草稿不变。需 flowUpdate"),
+		mcp.WithString("id", mcp.Required(), mcp.Description("流程 ID")),
+		mcp.WithNumber("version", mcp.Required(), mcp.Description("要恢复的发布版本号")),
+	), g.toolRollbackPublish)
+
+	g.server.AddTool(mcp.NewTool("delete_publish_history",
+		mcp.WithDescription("删除发布历史中的某 version；禁止删除当前线上版本。需 flowUpdate"),
+		mcp.WithString("id", mcp.Required(), mcp.Description("流程 ID")),
+		mcp.WithNumber("version", mcp.Required(), mcp.Description("要删除的历史版本号（不能是当前线上版本）")),
+	), g.toolDeletePublishHistory)
 
 	g.server.AddTool(mcp.NewTool("delete_flow",
 		mcp.WithDescription("删除流程图"),
@@ -129,14 +159,14 @@ func (g *Gateway) registerTools() {
 	), g.toolDeleteFlow)
 
 	g.server.AddTool(mcp.NewTool("execute_flow",
-		mcp.WithDescription("从流程入口（entryNode）执行流程图"),
+		mcp.WithDescription("从流程入口执行【已发布】版本；未发布则失败。调试请用编辑器试跑（草稿）"),
 		mcp.WithString("id", mcp.Required(), mcp.Description("流程 ID")),
 		mcp.WithString("data", mcp.Description("输入 JSON 字符串")),
 		mcp.WithString("type", mcp.Description("消息类型，默认 DEFAULT")),
 	), g.toolExecuteFlow)
 
 	g.server.AddTool(mcp.NewTool("execute_from_node",
-		mcp.WithDescription("从指定节点开始执行流程图（跳过 entryNode；nodeId 为 DSL 中节点 id）"),
+		mcp.WithDescription("从指定节点执行【已发布】版本（跳过 entryNode）；未发布则失败"),
 		mcp.WithString("id", mcp.Required(), mcp.Description("流程 ID")),
 		mcp.WithString("nodeId", mcp.Required(), mcp.Description("起始节点 ID（DSL nodes[].id）")),
 		mcp.WithString("data", mcp.Description("输入 JSON 字符串，作为进入该节点的消息体")),
@@ -290,25 +320,12 @@ func (g *Gateway) toolSaveFlow(ctx context.Context, req mcp.CallToolRequest) (*m
 		}
 	}
 
-	// 保存前校验 HTTP 路由冲突（与 API 一致，冲突不落库）
-	if g.Endpoints != nil {
-		if err := g.Endpoints.CheckHTTPRoutes(dsl.ID, &dsl); err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
-		}
-	}
-
 	rec, err := g.Store.SaveFlow(user.ID, &dsl)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	// HTTP 入口同步由 API 层统一处理；MCP 保存后同样需要
-	if g.Endpoints != nil {
-		if err := g.Endpoints.SyncFlow(rec); err != nil {
-			return mcp.NewToolResultError("saved but http endpoint failed: " + err.Error()), nil
-		}
-	}
 	if g.Exec != nil {
-		g.Exec.InvalidateFlow(rec.ID)
+		g.Exec.InvalidateFlowTrack(rec.ID, engine.CacheTrackDraft)
 	}
 	if g.Hub != nil {
 		g.Hub.NotifyFlowChanged("saved", rec.ID, rec.Name, "mcp")

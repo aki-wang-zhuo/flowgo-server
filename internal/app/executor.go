@@ -18,7 +18,7 @@ type Executor struct {
 	Engine *engine.Engine
 }
 
-// InvalidateFlow 丢弃指定流程的已编译节点缓存（DSL 保存/删除后调用）。
+// InvalidateFlow 丢弃指定流程全部缓存轨（删除后调用）。
 func (e *Executor) InvalidateFlow(flowID string) {
 	if e == nil || e.Engine == nil {
 		return
@@ -26,38 +26,52 @@ func (e *Executor) InvalidateFlow(flowID string) {
 	e.Engine.Invalidate(flowID)
 }
 
-// ExecuteFlow 按 flowID 加载 DSL 并执行消息。
+// InvalidateFlowTrack 丢弃某一缓存轨。
+func (e *Executor) InvalidateFlowTrack(flowID, track string) {
+	if e == nil || e.Engine == nil {
+		return
+	}
+	e.Engine.InvalidateTrack(flowID, track)
+}
+
+// ExecuteFlow 按已发布 DSL 执行；未发布则失败。
 func (e *Executor) ExecuteFlow(ctx context.Context, flowID, msgType, data string) (string, error) {
 	rec, err := e.Store.GetFlow(flowID)
 	if err != nil {
 		return "", err
 	}
-	if rec.DSL == nil {
-		return "", fmt.Errorf("flow dsl empty")
+	if rec.PublishedDSL == nil {
+		return "", store.ErrNotPublished
+	}
+	if rec.PublishedDSL.EntryNode == "" {
+		return "", fmt.Errorf("entryNode is required")
 	}
 	msg := types.NewMsg(msgType, types.JSON, data, nil)
-	out, err := e.Engine.Execute(ctx, rec.DSL, msg)
+	out, _, err := e.Engine.ExecuteFromWithLogsOpts(ctx, rec.PublishedDSL, rec.PublishedDSL.EntryNode, msg, engine.ExecuteOptions{
+		CacheTrack: engine.CacheTrackPublished,
+	})
 	if err != nil {
 		return "", err
 	}
 	return out.Data, nil
 }
 
-// ExecuteFromNode 按 flowID 加载 DSL，从指定节点开始执行消息（不经过 entryNode）。
+// ExecuteFromNode 从已发布 DSL 的指定节点执行。
 func (e *Executor) ExecuteFromNode(ctx context.Context, flowID, nodeID, msgType, data string) (string, error) {
 	rec, err := e.Store.GetFlow(flowID)
 	if err != nil {
 		return "", err
 	}
-	if rec.DSL == nil {
-		return "", fmt.Errorf("flow dsl empty")
+	if rec.PublishedDSL == nil {
+		return "", store.ErrNotPublished
 	}
+	dsl := rec.PublishedDSL
 	if strings.TrimSpace(nodeID) == "" {
 		return "", fmt.Errorf("nodeId is required")
 	}
 	found := false
-	for i := range rec.DSL.Nodes {
-		if rec.DSL.Nodes[i].ID == nodeID {
+	for i := range dsl.Nodes {
+		if dsl.Nodes[i].ID == nodeID {
 			found = true
 			break
 		}
@@ -69,11 +83,27 @@ func (e *Executor) ExecuteFromNode(ctx context.Context, flowID, nodeID, msgType,
 		msgType = "DEFAULT"
 	}
 	msg := types.NewMsg(msgType, types.JSON, data, nil)
-	out, err := e.Engine.ExecuteFrom(ctx, rec.DSL, nodeID, msg)
+	out, _, err := e.Engine.ExecuteFromWithLogsOpts(ctx, dsl, nodeID, msg, engine.ExecuteOptions{
+		CacheTrack: engine.CacheTrackPublished,
+	})
 	if err != nil {
 		return "", err
 	}
 	return out.Data, nil
+}
+
+func (e *Executor) resolveDraftDSL(flowID string, override *types.FlowDSL) (*types.FlowDSL, error) {
+	if override != nil {
+		return override, nil
+	}
+	rec, err := e.Store.GetFlow(flowID)
+	if err != nil {
+		return nil, err
+	}
+	if rec.DSL == nil {
+		return nil, fmt.Errorf("flow dsl empty")
+	}
+	return rec.DSL, nil
 }
 
 // SimulateHttpRouteReq 模拟 HTTP 入口某条路径的调试请求。
@@ -98,16 +128,9 @@ type SimulateHttpRouteResult struct {
 
 // SimulateHttpRoute 用路径调试值模拟一次 HTTP 请求并执行后续节点。
 func (e *Executor) SimulateHttpRoute(ctx context.Context, flowID string, req SimulateHttpRouteReq) (*SimulateHttpRouteResult, error) {
-	dsl := req.DSL
-	if dsl == nil {
-		rec, err := e.Store.GetFlow(flowID)
-		if err != nil {
-			return nil, err
-		}
-		if rec.DSL == nil {
-			return nil, fmt.Errorf("flow dsl empty")
-		}
-		dsl = rec.DSL
+	dsl, err := e.resolveDraftDSL(flowID, req.DSL)
+	if err != nil {
+		return nil, err
 	}
 	if req.NodeID == "" {
 		return nil, fmt.Errorf("nodeId is required")
@@ -162,7 +185,9 @@ func (e *Executor) SimulateHttpRoute(ctx context.Context, flowID string, req Sim
 		"debug":      "true",
 	}
 	msg := types.NewMsg("HTTP", types.JSON, body, meta)
-	out, logs, err := e.Engine.ExecuteFromWithLogs(ctx, dsl, startID, msg)
+	out, logs, err := e.Engine.ExecuteFromWithLogsOpts(ctx, dsl, startID, msg, engine.ExecuteOptions{
+		CacheTrack: engine.CacheTrackDraft,
+	})
 	result := &SimulateHttpRouteResult{
 		Logs: logs,
 		Meta: map[string]string{
@@ -200,16 +225,9 @@ type SimulateInjectResult struct {
 
 // SimulateInject 用注入节点的 JSON 作为消息体，从该节点执行并进入后续链路。
 func (e *Executor) SimulateInject(ctx context.Context, flowID string, req SimulateInjectReq) (*SimulateInjectResult, error) {
-	dsl := req.DSL
-	if dsl == nil {
-		rec, err := e.Store.GetFlow(flowID)
-		if err != nil {
-			return nil, err
-		}
-		if rec.DSL == nil {
-			return nil, fmt.Errorf("flow dsl empty")
-		}
-		dsl = rec.DSL
+	dsl, err := e.resolveDraftDSL(flowID, req.DSL)
+	if err != nil {
+		return nil, err
 	}
 	if req.NodeID == "" {
 		return nil, fmt.Errorf("nodeId is required")
@@ -253,7 +271,9 @@ func (e *Executor) SimulateInject(ctx context.Context, flowID string, req Simula
 	}
 
 	msg := types.NewMsg("INJECT", types.JSON, body, types.Metadata{"debug": "true", "inject": "true"})
-	out, logs, err := e.Engine.ExecuteFromWithLogs(ctx, &runDSL, req.NodeID, msg)
+	out, logs, err := e.Engine.ExecuteFromWithLogsOpts(ctx, &runDSL, req.NodeID, msg, engine.ExecuteOptions{
+		CacheTrack: engine.CacheTrackDraft,
+	})
 	result := &SimulateInjectResult{
 		Logs: logs,
 		Meta: map[string]string{
@@ -290,16 +310,9 @@ type SimulateHttpClientResult struct {
 // RunOnly=false 时进入后续链路；RunOnly=true 时只跑本节点。
 // 不渲染节点 body 模板；真实部署 / HTTP 入口触发仍走模板。
 func (e *Executor) SimulateHttpClient(ctx context.Context, flowID string, req SimulateHttpClientReq) (*SimulateHttpClientResult, error) {
-	dsl := req.DSL
-	if dsl == nil {
-		rec, err := e.Store.GetFlow(flowID)
-		if err != nil {
-			return nil, err
-		}
-		if rec.DSL == nil {
-			return nil, fmt.Errorf("flow dsl empty")
-		}
-		dsl = rec.DSL
+	dsl, err := e.resolveDraftDSL(flowID, req.DSL)
+	if err != nil {
+		return nil, err
 	}
 	if req.NodeID == "" {
 		return nil, fmt.Errorf("nodeId is required")
@@ -329,7 +342,8 @@ func (e *Executor) SimulateHttpClient(ctx context.Context, flowID string, req Si
 		"httpClient": "true",
 	})
 	out, logs, err := e.Engine.ExecuteFromWithLogsOpts(ctx, dsl, req.NodeID, msg, engine.ExecuteOptions{
-		OnlyStart: req.RunOnly,
+		OnlyStart:  req.RunOnly,
+		CacheTrack: engine.CacheTrackDraft,
 	})
 	result := &SimulateHttpClientResult{
 		Logs: logs,

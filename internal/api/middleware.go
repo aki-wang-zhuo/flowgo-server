@@ -49,14 +49,16 @@ type EndpointSync interface {
 // FlowExecutor 流程执行抽象，避免 api 包直接依赖引擎细节。
 type FlowExecutor interface {
 	ExecuteFlow(ctx context.Context, flowID string, msgType, data string) (resultData string, err error)
-	// ExecuteFromNode 从指定节点开始执行（跳过 entryNode）。
+	// ExecuteFromNode 从指定节点开始执行（跳过 entryNode）；使用已发布 DSL。
 	ExecuteFromNode(ctx context.Context, flowID, nodeID, msgType, data string) (resultData string, err error)
 	SimulateHttpRoute(ctx context.Context, flowID string, req app.SimulateHttpRouteReq) (*app.SimulateHttpRouteResult, error)
 	SimulateInject(ctx context.Context, flowID string, req app.SimulateInjectReq) (*app.SimulateInjectResult, error)
 	SimulateHttpClient(ctx context.Context, flowID string, req app.SimulateHttpClientReq) (*app.SimulateHttpClientResult, error)
 	SimulateJsTransform(ctx context.Context, flowID string, req app.SimulateJsTransformReq) (*app.SimulateJsTransformResult, error)
-	// InvalidateFlow 丢弃指定流程的已编译节点缓存（保存/删除后调用）。
+	// InvalidateFlow 丢弃全部缓存轨。
 	InvalidateFlow(flowID string)
+	// InvalidateFlowTrack 丢弃指定缓存轨（draft / published）。
+	InvalidateFlowTrack(flowID, track string)
 }
 
 // Middleware 鉴权中间件：注入 *store.User 到 context。

@@ -30,16 +30,9 @@ type SimulateJsTransformResult struct {
 // SimulateJsTransform 用 debugValue 作为脚本 msg 入参，从该节点执行。
 // RunOnly=false 时进入后续链路；RunOnly=true 时只跑本节点。
 func (e *Executor) SimulateJsTransform(ctx context.Context, flowID string, req SimulateJsTransformReq) (*SimulateJsTransformResult, error) {
-	dsl := req.DSL
-	if dsl == nil {
-		rec, err := e.Store.GetFlow(flowID)
-		if err != nil {
-			return nil, err
-		}
-		if rec.DSL == nil {
-			return nil, fmt.Errorf("flow dsl empty")
-		}
-		dsl = rec.DSL
+	dsl, err := e.resolveDraftDSL(flowID, req.DSL)
+	if err != nil {
+		return nil, err
 	}
 	if req.NodeID == "" {
 		return nil, fmt.Errorf("nodeId is required")
@@ -69,7 +62,8 @@ func (e *Executor) SimulateJsTransform(ctx context.Context, flowID string, req S
 		"jsTransform": "true",
 	})
 	out, logs, err := e.Engine.ExecuteFromWithLogsOpts(ctx, dsl, req.NodeID, msg, engine.ExecuteOptions{
-		OnlyStart: req.RunOnly,
+		OnlyStart:  req.RunOnly,
+		CacheTrack: engine.CacheTrackDraft,
 	})
 	result := &SimulateJsTransformResult{
 		Logs: logs,

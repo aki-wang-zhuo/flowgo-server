@@ -55,7 +55,7 @@ func TestCheckHTTPRoutes_CrossFlow(t *testing.T) {
 			},
 		},
 	}
-	if err := m.SyncFlow(&store.FlowRecord{ID: "flow-1", Name: "一号", DSL: dsl1}); err != nil {
+	if err := m.SyncFlow(&store.FlowRecord{ID: "flow-1", Name: "一号", PublishedDSL: dsl1}); err != nil {
 		t.Fatal(err)
 	}
 	defer m.RemoveFlow("flow-1")

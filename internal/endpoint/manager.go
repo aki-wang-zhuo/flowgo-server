@@ -74,21 +74,28 @@ func (m *Manager) StartAll() {
 		return
 	}
 	for _, rec := range list {
+		if rec == nil || rec.PublishedDSL == nil {
+			continue
+		}
 		if err := m.SyncFlow(rec); err != nil {
 			log.Printf("endpoint: sync flow %s: %v", rec.ID, err)
 		}
 	}
 }
 
-// SyncFlow 按最新 DSL 重建该流程的 HTTP 路由（先卸后装）。
+// SyncFlow 按已发布 DSL 重建该流程的 HTTP 路由（先卸后装）；未发布则只卸载。
 func (m *Manager) SyncFlow(rec *store.FlowRecord) error {
-	if rec == nil || rec.DSL == nil {
-		m.RemoveFlow("")
+	if rec == nil {
+		return nil
+	}
+	dsl := rec.PublishedDSL
+	if dsl == nil {
+		m.RemoveFlow(rec.ID)
 		return nil
 	}
 	m.RemoveFlow(rec.ID)
 
-	for _, node := range rec.DSL.Nodes {
+	for _, node := range dsl.Nodes {
 		if node.Type != epcomp.Type {
 			continue
 		}
@@ -103,7 +110,7 @@ func (m *Manager) SyncFlow(rec *store.FlowRecord) error {
 				flowID:   rec.ID,
 				nodeID:   node.ID,
 				relation: epcomp.RouterRelation(r),
-				dsl:      cloneDSL(rec.DSL),
+				dsl:      cloneDSL(dsl),
 			}, rec.ID); err != nil {
 				m.RemoveFlow(rec.ID)
 				return err
@@ -320,7 +327,9 @@ func (m *Manager) makeHandler(ss *sharedServer, pattern string, allowCors bool) 
 			http.Error(w, "no outgoing edge for route: "+relation, http.StatusBadGateway)
 			return
 		}
-		out, err := m.engine.ExecuteFrom(ctx, dsl, startID, msg)
+		out, _, err := m.engine.ExecuteFromWithLogsOpts(ctx, dsl, startID, msg, engine.ExecuteOptions{
+			CacheTrack: engine.CacheTrackPublished,
+		})
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

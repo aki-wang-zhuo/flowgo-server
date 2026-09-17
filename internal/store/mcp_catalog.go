@@ -52,8 +52,14 @@ var mcpCatalogDefs = []mcpCapDef{
 				Descriptions: map[string]string{types.LocaleEnUS: "List flows accessible to the current user"},
 			},
 			{
-				Name: "get_flow", Description: "获取指定流程图 DSL",
-				Descriptions: map[string]string{types.LocaleEnUS: "Get the DSL of a flow by id"},
+				Name: "get_flow", Description: "获取流程草稿 DSL 与发布状态（published / unpublishedChanges）",
+				Descriptions: map[string]string{types.LocaleEnUS: "Get draft DSL and publish status (published / unpublishedChanges)"},
+			},
+			{
+				Name: "list_publish_history", Description: "列出流程发布历史（含当前已发布版本）",
+				Descriptions: map[string]string{
+					types.LocaleEnUS: "List publish history (including the current published version)",
+				},
 			},
 			{
 				Name: "get_active_flow", Description: "获取编辑器中正在编辑的流程（含未保存画布与 revision）；需编辑器在线",
@@ -85,9 +91,9 @@ var mcpCatalogDefs = []mcpCapDef{
 		},
 		Tools: []mcpToolDef{
 			{
-				Name: "save_flow", Description: "保存流程图（JSON DSL）；目标不存在时需本权限",
+				Name: "save_flow", Description: "保存流程草稿（不发布）；目标不存在时需本权限",
 				Descriptions: map[string]string{
-					types.LocaleEnUS: "Save a flow (JSON DSL); required when the target does not exist",
+					types.LocaleEnUS: "Save a flow draft (does not publish); required when the target does not exist",
 				},
 			},
 		},
@@ -98,15 +104,39 @@ var mcpCatalogDefs = []mcpCapDef{
 		Titles: map[string]string{
 			types.LocaleEnUS: "Update flow",
 		},
-		Description: "通过 save_flow 更新已有流程图；或通过 patch_active_flow 增量修改编辑器中正在编辑的流程",
+		Description: "保存草稿、发布/回滚线上版本、放弃草稿，或增量修改编辑器中正在编辑的流程",
 		Descriptions: map[string]string{
-			types.LocaleEnUS: "Update an existing flow via save_flow, or patch the editor's active flow via patch_active_flow",
+			types.LocaleEnUS: "Save draft, publish/rollback live version, discard draft, or patch the editor's active flow",
 		},
 		Tools: []mcpToolDef{
 			{
-				Name: "save_flow", Description: "保存流程图（JSON DSL）；目标已存在时需本权限",
+				Name: "save_flow", Description: "保存流程草稿（不发布）；目标已存在时需本权限",
 				Descriptions: map[string]string{
-					types.LocaleEnUS: "Save a flow (JSON DSL); required when the target already exists",
+					types.LocaleEnUS: "Save a flow draft (does not publish); required when the target already exists",
+				},
+			},
+			{
+				Name: "publish_flow", Description: "将已保存草稿发布为线上版本并同步 HTTP 入口",
+				Descriptions: map[string]string{
+					types.LocaleEnUS: "Publish the saved draft as the live version and sync HTTP endpoints",
+				},
+			},
+			{
+				Name: "discard_draft", Description: "放弃草稿，用当前已发布版本覆盖",
+				Descriptions: map[string]string{
+					types.LocaleEnUS: "Discard the draft and restore it from the published version",
+				},
+			},
+			{
+				Name: "rollback_publish", Description: "将线上已发布版本回滚到历史 version（草稿不变）",
+				Descriptions: map[string]string{
+					types.LocaleEnUS: "Roll the live published version back to a history version (draft unchanged)",
+				},
+			},
+			{
+				Name: "delete_publish_history", Description: "删除发布历史中的某 version（不能删当前线上版本）",
+				Descriptions: map[string]string{
+					types.LocaleEnUS: "Delete a publish-history version (cannot delete the live version)",
 				},
 			},
 			{
@@ -140,21 +170,21 @@ var mcpCatalogDefs = []mcpCapDef{
 		Titles: map[string]string{
 			types.LocaleEnUS: "Execute flow",
 		},
-		Description: "从入口或指定节点触发流程图运行并返回结果",
+		Description: "执行【已发布】版本；未发布则失败。画布调试不走本工具",
 		Descriptions: map[string]string{
-			types.LocaleEnUS: "Run a flow from the entry or a given node and return the result",
+			types.LocaleEnUS: "Run the published version; fails if unpublished. Canvas debug does not use these tools",
 		},
 		Tools: []mcpToolDef{
 			{
-				Name: "execute_flow", Description: "从流程入口（entryNode）执行（可传输入 JSON 与消息类型）",
+				Name: "execute_flow", Description: "从已发布流程入口执行（可传输入 JSON 与消息类型）",
 				Descriptions: map[string]string{
-					types.LocaleEnUS: "Execute from the flow entry node (optional input JSON and message type)",
+					types.LocaleEnUS: "Execute the published flow from the entry node (optional input JSON and message type)",
 				},
 			},
 			{
-				Name: "execute_from_node", Description: "从指定节点开始执行（需 nodeId；可传输入 JSON 与消息类型）",
+				Name: "execute_from_node", Description: "从已发布流程的指定节点执行（需 nodeId）",
 				Descriptions: map[string]string{
-					types.LocaleEnUS: "Execute from a specific node (nodeId required; optional input JSON and message type)",
+					types.LocaleEnUS: "Execute the published flow from a specific node (nodeId required)",
 				},
 			},
 		},
