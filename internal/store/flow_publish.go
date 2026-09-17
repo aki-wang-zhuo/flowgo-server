@@ -30,12 +30,17 @@ type historyEntry struct {
 	DSLJSON     string `json:"dslJSON"`
 }
 
-// migrateLegacyPublished 旧库只有 dslJSON：视为已发布且草稿相同，并写回 publishedJSON。
+// migrateLegacyPublished 旧库只有 dslJSON、尚无发布字段：视为已发布且草稿相同，并写回 publishedJSON。
+// 新流程 SaveFlow 会显式写入 publishedVersion=0 / publishedJSON=""，表示刻意未发布，不得自动上线。
 func (s *Store) migrateLegacyPublished(doc *document.Document, rec *FlowRecord) error {
 	if rec == nil || rec.PublishedDSL != nil {
 		return nil
 	}
 	if rec.DSL == nil {
+		return nil
+	}
+	// 文档已带发布体系字段（含 version=0 的未发布草稿）→ 跳过迁移
+	if doc != nil && doc.Get("publishedVersion") != nil {
 		return nil
 	}
 	raw := DocString(doc, "dslJSON")
