@@ -154,9 +154,14 @@ func (g *Gateway) registerTools() {
 	), g.toolDeletePublishHistory)
 
 	g.server.AddTool(mcp.NewTool("delete_flow",
-		mcp.WithDescription("删除流程图"),
+		mcp.WithDescription("删除流程图：非垃圾箱则移入垃圾箱（已上线会先下线）；已在垃圾箱则彻底删除"),
 		mcp.WithString("id", mcp.Required(), mcp.Description("流程 ID")),
 	), g.toolDeleteFlow)
+
+	g.server.AddTool(mcp.NewTool("restore_flow",
+		mcp.WithDescription("从垃圾箱恢复流程到原分组（不上线；需自行决定是否 online）"),
+		mcp.WithString("id", mcp.Required(), mcp.Description("流程 ID")),
+	), g.toolRestoreFlow)
 
 	g.server.AddTool(mcp.NewTool("execute_flow",
 		mcp.WithDescription("从流程入口执行【已发布】版本；未发布则失败。调试请用编辑器试跑（草稿）"),
@@ -343,22 +348,63 @@ func (g *Gateway) toolDeleteFlow(ctx context.Context, req mcp.CallToolRequest) (
 	if !user.CanAccessFlow(id) {
 		return mcp.NewToolResultError("forbidden"), nil
 	}
-	if rec, err := g.Store.GetFlow(id); err == nil && rec != nil && rec.Locked {
-		return mcp.NewToolResultError("flow is locked"), nil
-	}
-	if err := g.Store.DeleteFlow(id); err != nil {
+	result, err := g.Store.SoftDeleteOrPurgeFlow(id)
+	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	if g.Endpoints != nil {
-		g.Endpoints.RemoveFlow(id)
+	if result.Purged {
+		if g.Endpoints != nil {
+			g.Endpoints.RemoveFlow(id)
+		}
+		if g.Exec != nil {
+			g.Exec.InvalidateFlow(id)
+		}
+		if g.Hub != nil {
+			g.Hub.NotifyFlowChanged("deleted", id, "", "mcp")
+		}
+		return mcp.NewToolResultText(`{"status":"ok","action":"purged"}`), nil
 	}
-	if g.Exec != nil {
-		g.Exec.InvalidateFlow(id)
+	if result.WasPublished && result.Flow != nil {
+		if g.Endpoints != nil {
+			_ = g.Endpoints.SyncFlow(result.Flow)
+		}
+		if g.Exec != nil {
+			g.Exec.InvalidateFlowTrack(id, engine.CacheTrackPublished)
+		}
 	}
 	if g.Hub != nil {
-		g.Hub.NotifyFlowChanged("deleted", id, "", "mcp")
+		name := ""
+		if result.Flow != nil {
+			name = result.Flow.Name
+		}
+		g.Hub.NotifyFlowChanged("trashed", id, name, "mcp")
 	}
-	return mcp.NewToolResultText(`{"status":"ok"}`), nil
+	b, _ := json.Marshal(map[string]interface{}{
+		"status": "ok",
+		"action": "trashed",
+		"flow":   result.Flow,
+	})
+	return mcp.NewToolResultText(string(b)), nil
+}
+
+func (g *Gateway) toolRestoreFlow(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	user, err := g.requireMCPPerm(ctx, permFlowDelete)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	id, _ := req.RequireString("id")
+	if !user.CanAccessFlow(id) {
+		return mcp.NewToolResultError("forbidden"), nil
+	}
+	rec, err := g.Store.RestoreFlow(id)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	if g.Hub != nil {
+		g.Hub.NotifyFlowChanged("restored", rec.ID, rec.Name, "mcp")
+	}
+	b, _ := json.Marshal(rec)
+	return mcp.NewToolResultText(string(b)), nil
 }
 
 func (g *Gateway) toolExecuteFlow(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {

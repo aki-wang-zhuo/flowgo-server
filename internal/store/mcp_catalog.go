@@ -153,14 +153,18 @@ var mcpCatalogDefs = []mcpCapDef{
 		Titles: map[string]string{
 			types.LocaleEnUS: "Delete flow",
 		},
-		Description: "删除指定流程图",
+		Description: "移入垃圾箱（已上线先下线）；垃圾箱内再删则彻底删除。恢复用 restore_flow",
 		Descriptions: map[string]string{
-			types.LocaleEnUS: "Delete a flow by id",
+			types.LocaleEnUS: "Move to trash (offline if published); purge if already in trash. Use restore_flow to restore",
 		},
 		Tools: []mcpToolDef{
 			{
-				Name: "delete_flow", Description: "删除流程图",
-				Descriptions: map[string]string{types.LocaleEnUS: "Delete a flow"},
+				Name: "delete_flow", Description: "移入垃圾箱或彻底删除",
+				Descriptions: map[string]string{types.LocaleEnUS: "Move to trash or permanently delete"},
+			},
+			{
+				Name: "restore_flow", Description: "从垃圾箱恢复到原分组",
+				Descriptions: map[string]string{types.LocaleEnUS: "Restore a flow from trash to its previous group"},
 			},
 		},
 	},

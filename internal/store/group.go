@@ -16,6 +16,8 @@ type GroupRecord struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
 	Sort      int    `json:"sort"`
+	// System 系统分组（如垃圾箱），禁止改名 / 删除。
+	System    bool   `json:"system,omitempty"`
 	CreatedAt string `json:"createdAt"`
 	UpdatedAt string `json:"updatedAt"`
 }
@@ -82,6 +84,9 @@ func (s *Store) CreateGroup(name string) (*GroupRecord, error) {
 
 // RenameGroup 修改分组名称。
 func (s *Store) RenameGroup(id, name string) (*GroupRecord, error) {
+	if IsTrashGroupID(id) {
+		return nil, ErrSystemGroup
+	}
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return nil, errors.New("group name is required")
@@ -92,6 +97,9 @@ func (s *Store) RenameGroup(id, name string) (*GroupRecord, error) {
 	}
 	if len(docs) == 0 {
 		return nil, ErrNotFound
+	}
+	if docBool(docs[0], "system", false) {
+		return nil, ErrSystemGroup
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	if err := s.db.UpdateById(ColGroups, docs[0].ObjectId(), updateFields(map[string]interface{}{
@@ -105,6 +113,9 @@ func (s *Store) RenameGroup(id, name string) (*GroupRecord, error) {
 
 // DeleteGroup 删除分组，并将该组下流程的 groupId 清空（移入未分组）。
 func (s *Store) DeleteGroup(id string) error {
+	if IsTrashGroupID(id) {
+		return ErrSystemGroup
+	}
 	docs, err := s.db.FindAll(query.NewQuery(ColGroups).Where(query.Field("groupId").Eq(id)))
 	if err != nil {
 		return err
@@ -112,10 +123,54 @@ func (s *Store) DeleteGroup(id string) error {
 	if len(docs) == 0 {
 		return ErrNotFound
 	}
+	if docBool(docs[0], "system", false) {
+		return ErrSystemGroup
+	}
 	if err := s.ClearFlowsGroup(id); err != nil {
 		return err
 	}
+	// 垃圾箱内流程的 previousGroupId 指向本分组时清空
+	if err := s.clearPreviousGroupRefs(id); err != nil {
+		return err
+	}
 	return s.db.DeleteById(ColGroups, docs[0].ObjectId())
+}
+
+// clearPreviousGroupRefs 删除分组后，清空仍指向该组的 previousGroupId。
+func (s *Store) clearPreviousGroupRefs(groupID string) error {
+	docs, err := s.db.FindAll(query.NewQuery(ColFlows).Where(query.Field("previousGroupId").Eq(groupID)))
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	for _, d := range docs {
+		if err := s.db.UpdateById(ColFlows, d.ObjectId(), updateFields(map[string]interface{}{
+			"previousGroupId": "",
+			"updatedAt":       now,
+		})); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// EnsureTrashGroup 确保系统垃圾箱分组存在（启动时调用）。
+func (s *Store) EnsureTrashGroup() error {
+	if _, err := s.GetGroup(TrashGroupID); err == nil {
+		return nil
+	} else if !errors.Is(err, ErrNotFound) {
+		return err
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	doc := document.NewDocument()
+	doc.Set("groupId", TrashGroupID)
+	doc.Set("name", "垃圾箱")
+	doc.Set("sort", trashGroupSort)
+	doc.Set("system", true)
+	doc.Set("createdAt", now)
+	doc.Set("updatedAt", now)
+	_, err := s.db.InsertOne(ColGroups, doc)
+	return err
 }
 
 func groupFromDoc(doc *document.Document) *GroupRecord {
@@ -131,6 +186,7 @@ func groupFromDoc(doc *document.Document) *GroupRecord {
 		ID:        DocString(doc, "groupId"),
 		Name:      DocString(doc, "name"),
 		Sort:      sortVal,
+		System:    docBool(doc, "system", false) || IsTrashGroupID(DocString(doc, "groupId")),
 		CreatedAt: DocString(doc, "createdAt"),
 		UpdatedAt: DocString(doc, "updatedAt"),
 	}

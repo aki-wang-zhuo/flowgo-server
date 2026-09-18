@@ -102,6 +102,7 @@ func (s *Server) HandleSaveFlow(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleDeleteFlow DELETE /api/flows/{id}
+// 组外：移入垃圾箱（已上线则先下线）；垃圾箱内：彻底删除。
 func (s *Server) HandleDeleteFlow(w http.ResponseWriter, r *http.Request) {
 	user := UserFromContext(r.Context())
 	id := r.PathValue("id")
@@ -113,7 +114,8 @@ func (s *Server) HandleDeleteFlow(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "forbidden")
 		return
 	}
-	if err := s.Store.DeleteFlow(id); errors.Is(err, store.ErrNotFound) {
+	result, err := s.Store.SoftDeleteOrPurgeFlow(id)
+	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	} else if errors.Is(err, store.ErrFlowLocked) {
@@ -123,16 +125,70 @@ func (s *Server) HandleDeleteFlow(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if s.Endpoints != nil {
-		s.Endpoints.RemoveFlow(id)
+	if result.Purged {
+		if s.Endpoints != nil {
+			s.Endpoints.RemoveFlow(id)
+		}
+		if s.Exec != nil {
+			s.Exec.InvalidateFlow(id)
+		}
+		if s.Hub != nil {
+			s.Hub.NotifyFlowChanged("deleted", id, "", "api")
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "action": "purged"})
+		return
 	}
-	if s.Exec != nil {
-		s.Exec.InvalidateFlow(id)
+	if result.WasPublished {
+		if err := s.afterOffline(result.Flow); err != nil {
+			writeError(w, http.StatusBadRequest, "moved to trash but unload failed: "+err.Error())
+			return
+		}
 	}
 	if s.Hub != nil {
-		s.Hub.NotifyFlowChanged("deleted", id, "", "api")
+		name := ""
+		if result.Flow != nil {
+			name = result.Flow.Name
+		}
+		s.Hub.NotifyFlowChanged("trashed", id, name, "api")
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status": "ok",
+		"action": "trashed",
+		"flow":   result.Flow,
+	})
+}
+
+// HandleRestoreFlow POST /api/flows/{id}/restore
+// 从垃圾箱恢复到原分组；不上线，由前端按需询问。
+func (s *Server) HandleRestoreFlow(w http.ResponseWriter, r *http.Request) {
+	user := UserFromContext(r.Context())
+	id := r.PathValue("id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "missing id")
+		return
+	}
+	if !user.CanAccessFlow(id) {
+		writeError(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	rec, err := s.Store.RestoreFlow(id)
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	} else if errors.Is(err, store.ErrFlowLocked) {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	} else if errors.Is(err, store.ErrNotInTrash) {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	} else if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if s.Hub != nil {
+		s.Hub.NotifyFlowChanged("restored", rec.ID, rec.Name, "api")
+	}
+	writeJSON(w, http.StatusOK, rec)
 }
 
 type setFlowLockedReq struct {

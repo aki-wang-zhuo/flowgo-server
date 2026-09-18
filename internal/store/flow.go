@@ -20,7 +20,9 @@ type FlowRecord struct {
 	Name      string         `json:"name"`
 	OwnerID   string         `json:"ownerId"`
 	GroupID   string         `json:"groupId"` // 空字符串表示未分组
-	Locked    bool           `json:"locked"`  // 锁定后禁止改画布 / 保存 / 删除 / 发布（含 MCP）
+	// PreviousGroupID 移入垃圾箱前的分组；恢复时写回（空=未分组）。
+	PreviousGroupID string `json:"previousGroupId,omitempty"`
+	Locked          bool   `json:"locked"` // 锁定后禁止改画布 / 保存 / 删除 / 发布（含 MCP）
 	// HasLockPassword 是否设置了非空锁定密码（不回传密码本身）。
 	HasLockPassword bool           `json:"hasLockPassword"`
 	DSL             *types.FlowDSL `json:"dsl"` // 草稿；编辑器始终读写此份
@@ -191,7 +193,18 @@ func (s *Store) SetFlowLocked(flowID string, locked bool, password string) (*Flo
 }
 
 // SetFlowGroup 将流程移入指定分组；groupID 为空表示未分组。
+// 禁止直接移入垃圾箱（须走 SoftDeleteOrPurgeFlow）；禁止从垃圾箱用本接口移出（须走 RestoreFlow）。
 func (s *Store) SetFlowGroup(flowID, groupID string) (*FlowRecord, error) {
+	if IsTrashGroupID(groupID) {
+		return nil, ErrCannotMoveToTrash
+	}
+	cur, err := s.GetFlow(flowID)
+	if err != nil {
+		return nil, err
+	}
+	if cur.GroupID == TrashGroupID {
+		return nil, ErrMustRestoreFromTrash
+	}
 	if groupID != "" {
 		if _, err := s.GetGroup(groupID); err != nil {
 			return nil, err
@@ -215,7 +228,11 @@ func (s *Store) SetFlowGroup(flowID, groupID string) (*FlowRecord, error) {
 }
 
 // ClearFlowsGroup 清空指定分组下所有流程的 groupId（删除分组时调用）。
+// 不会清空垃圾箱（系统分组不可删）。
 func (s *Store) ClearFlowsGroup(groupID string) error {
+	if IsTrashGroupID(groupID) {
+		return ErrSystemGroup
+	}
 	docs, err := s.db.FindAll(query.NewQuery(ColFlows).Where(query.Field("groupId").Eq(groupID)))
 	if err != nil {
 		return err
@@ -254,6 +271,7 @@ func flowFromDoc(doc *document.Document) *FlowRecord {
 		Name:             DocString(doc, "name"),
 		OwnerID:          DocString(doc, "ownerId"),
 		GroupID:          DocString(doc, "groupId"),
+		PreviousGroupID:  DocString(doc, "previousGroupId"),
 		Locked:           docBool(doc, "locked", false),
 		HasLockPassword:  pwHash != "",
 		CreatedAt:        DocString(doc, "createdAt"),

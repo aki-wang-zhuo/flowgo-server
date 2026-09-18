@@ -53,6 +53,10 @@ func (s *Server) HandleRenameGroup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
+	if errors.Is(err, store.ErrSystemGroup) {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -70,6 +74,9 @@ func (s *Server) HandleDeleteGroup(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.Store.DeleteGroup(id); errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "not found")
+		return
+	} else if errors.Is(err, store.ErrSystemGroup) {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	} else if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -102,6 +109,10 @@ func (s *Server) HandleSetFlowGroup(w http.ResponseWriter, r *http.Request) {
 	rec, err := s.Store.SetFlowGroup(id, req.GroupID)
 	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	if errors.Is(err, store.ErrCannotMoveToTrash) || errors.Is(err, store.ErrMustRestoreFromTrash) {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if err != nil {
