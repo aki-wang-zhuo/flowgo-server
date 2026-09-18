@@ -3,6 +3,7 @@ module github.com/flowgo/flowgo-server
 go 1.23.0
 
 require (
+	github.com/eclipse/paho.mqtt.golang v1.5.0
 	github.com/flowgo/flowgo v0.0.0
 	github.com/flowgo/flowgo-node/sdk v0.0.0
 	github.com/golang-jwt/jwt/v5 v5.2.1
@@ -45,7 +46,8 @@ require (
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	go.etcd.io/bbolt v1.3.6 // indirect
 	go.opencensus.io v0.23.0 // indirect
-	golang.org/x/net v0.21.0 // indirect
+	golang.org/x/net v0.27.0 // indirect
+	golang.org/x/sync v0.10.0 // indirect
 	golang.org/x/sys v0.28.0 // indirect
 	golang.org/x/text v0.21.0 // indirect
 	google.golang.org/protobuf v1.28.1 // indirect

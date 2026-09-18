@@ -2,8 +2,10 @@ package ws
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -19,6 +21,8 @@ const (
 	sendBuf    = 32
 )
 
+var wsSessionSeq atomic.Uint64
+
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
@@ -28,10 +32,11 @@ var upgrader = websocket.Upgrader{
 
 // Client 单条编辑器连接。
 type Client struct {
-	hub  *Hub
-	user *store.User
-	conn *websocket.Conn
-	send chan []byte
+	hub       *Hub
+	user      *store.User
+	conn      *websocket.Conn
+	send      chan []byte
+	sessionID string
 }
 
 // Handler 返回 WebSocket 升级处理器：GET /api/ws?token=<JWT>
@@ -60,10 +65,11 @@ func Handler(hub *Hub, authSvc *auth.Service, st *store.Store) http.Handler {
 			return
 		}
 		c := &Client{
-			hub:  hub,
-			user: user,
-			conn: conn,
-			send: make(chan []byte, sendBuf),
+			hub:       hub,
+			user:      user,
+			conn:      conn,
+			send:      make(chan []byte, sendBuf),
+			sessionID: fmt.Sprintf("ws-%d", wsSessionSeq.Add(1)),
 		}
 		hub.add(c)
 

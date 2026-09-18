@@ -16,6 +16,7 @@ import (
 	"github.com/flowgo/flowgo-server/internal/config"
 	"github.com/flowgo/flowgo-server/internal/endpoint"
 	mcppkg "github.com/flowgo/flowgo-server/internal/mcp"
+	"github.com/flowgo/flowgo-server/internal/mqttendpoint"
 	"github.com/flowgo/flowgo-server/internal/oauth"
 	"github.com/flowgo/flowgo-server/internal/pluginhost"
 	"github.com/flowgo/flowgo-server/internal/store"
@@ -39,6 +40,9 @@ func main() {
 	exec := &app.Executor{Store: st, Engine: eng}
 	hub := wspkg.NewHub()
 	epMgr := endpoint.NewManager(st, eng)
+	mqttMgr := mqttendpoint.NewManager(st, eng, hub)
+	hub.SetDraftMQTT(mqttMgr)
+	epSync := endpoint.NewComposite(epMgr, mqttMgr)
 
 	pluginDir := filepath.Join(cfg.DataDir, "plugins")
 	docsDir := filepath.Join(cfg.DataDir, "docs")
@@ -53,7 +57,7 @@ func main() {
 	pluginMgr := pluginhost.NewManager(pluginDir, engine.DefaultRegistry, docStore)
 	pluginMgr.LoadAll()
 
-	apiSrv := &api.Server{Auth: authSvc, Store: st, Exec: exec, Hub: hub, Endpoints: epMgr, Plugins: pluginMgr, Docs: docStore}
+	apiSrv := &api.Server{Auth: authSvc, Store: st, Exec: exec, Hub: hub, Endpoints: epSync, Plugins: pluginMgr, Docs: docStore}
 
 	mux := http.NewServeMux()
 	mux.Handle("/", apiSrv.NewMux())
@@ -66,7 +70,7 @@ func main() {
 		}, authSvc, st)
 		oauthSrv.Mount(mux)
 
-		gw := mcppkg.New(authSvc, st, exec, hub, epMgr, oauthSrv)
+		gw := mcppkg.New(authSvc, st, exec, hub, epSync, oauthSrv)
 		mux.Handle("/mcp", gw.Handler())
 		mux.Handle("/mcp/", gw.Handler())
 		base := strings.TrimRight(cfg.PublicBaseURL, "/")
@@ -80,8 +84,8 @@ func main() {
 		mux.Handle("/editor/", http.StripPrefix("/editor/", http.FileServer(http.Dir(editorDir))))
 	}
 
-	// 恢复已保存流程的 HTTP 入口
-	go epMgr.StartAll()
+	// 恢复已保存流程的 HTTP / MQTT 入口
+	go epSync.StartAll()
 
 	log.Printf("FlowGo Server listening on %s", cfg.Addr)
 	log.Printf("DB path: %s", cfg.DBPath)

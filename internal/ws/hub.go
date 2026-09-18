@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"sync"
 	"time"
+
+	"github.com/flowgo/flowgo/api/types"
 )
 
 // Event 服务端推送给编辑器的统一信封。
@@ -43,12 +45,37 @@ type EditorCommandPayload struct {
 	FlowID string `json:"flowId,omitempty"`
 }
 
+// FlowDebugPayload MQTT / HTTP 等入口触发执行后推送的调试日志。
+type FlowDebugPayload struct {
+	FlowID string           `json:"flowId"`
+	Logs   []types.DebugLog `json:"logs,omitempty"`
+	Error  string           `json:"error,omitempty"`
+}
+
 // Hub 管理所有编辑器 WebSocket 连接，并广播事件。
 type Hub struct {
 	mu        sync.RWMutex
 	clients   map[*Client]struct{}
 	queryOnce sync.Once
 	query     *queryState
+	// DraftMQTT 可选：草稿 MQTT 随编辑器打开流程挂载/释放
+	DraftMQTT DraftMQTTHook
+}
+
+// DraftMQTTHook 编辑器打开流程会话与草稿 MQTT 生命周期绑定。
+type DraftMQTTHook interface {
+	UpdateSessionOpenFlows(sessionID string, openIDs []string)
+	ReleaseSession(sessionID string)
+}
+
+// SetDraftMQTT 注入草稿 MQTT 会话钩子（启动时调用一次）。
+func (h *Hub) SetDraftMQTT(hook DraftMQTTHook) {
+	if h == nil {
+		return
+	}
+	h.mu.Lock()
+	h.DraftMQTT = hook
+	h.mu.Unlock()
 }
 
 // NewHub 创建空 Hub。
@@ -64,11 +91,15 @@ func (h *Hub) add(c *Client) {
 
 func (h *Hub) remove(c *Client) {
 	h.mu.Lock()
+	hook := h.DraftMQTT
 	if _, ok := h.clients[c]; ok {
 		delete(h.clients, c)
 		close(c.send)
 	}
 	h.mu.Unlock()
+	if hook != nil && c != nil && c.sessionID != "" {
+		hook.ReleaseSession(c.sessionID)
+	}
 }
 
 // ClientCount 当前连接数（状态排查用）。
@@ -113,6 +144,21 @@ func (h *Hub) NotifyEditorCommand(action, flowID string) {
 	h.Broadcast(NewEvent("editor.command", EditorCommandPayload{
 		Action: action,
 		FlowID: flowID,
+	}))
+}
+
+// NotifyFlowDebug 向编辑器推送某流程的调试日志（如 MQTT 收触发）。
+func (h *Hub) NotifyFlowDebug(flowID string, logs []types.DebugLog, errMsg string) {
+	if h == nil || flowID == "" {
+		return
+	}
+	if len(logs) == 0 && errMsg == "" {
+		return
+	}
+	h.Broadcast(NewEvent("flow.debug", FlowDebugPayload{
+		FlowID: flowID,
+		Logs:   logs,
+		Error:  errMsg,
 	}))
 }
 

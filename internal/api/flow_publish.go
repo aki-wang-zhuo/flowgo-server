@@ -183,6 +183,10 @@ func (s *Server) afterOffline(rec *store.FlowRecord) error {
 		if err := s.Endpoints.SyncFlow(rec); err != nil {
 			return err
 		}
+		if err := s.Endpoints.SyncDraftIfOpen(rec); err != nil {
+			// 下线后草稿「连接并响应」失败不阻断下线
+			_ = err
+		}
 	}
 	if s.Exec != nil {
 		s.Exec.InvalidateFlowTrack(rec.ID, engine.CacheTrackPublished)

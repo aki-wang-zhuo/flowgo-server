@@ -55,6 +55,19 @@ func (c *Client) handleInbound(data []byte) {
 			return
 		}
 		c.hub.CompleteActivePatch(reply)
+	case "editor.open_flows":
+		var p struct {
+			OpenIDs []string `json:"openIds"`
+		}
+		if err := json.Unmarshal(msg.Payload, &p); err != nil {
+			return
+		}
+		c.hub.mu.RLock()
+		hook := c.hub.DraftMQTT
+		c.hub.mu.RUnlock()
+		if hook != nil {
+			hook.UpdateSessionOpenFlows(c.sessionID, p.OpenIDs)
+		}
 	default:
 		// ping 正文或其它类型：忽略
 	}

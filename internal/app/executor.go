@@ -47,8 +47,9 @@ func (e *Executor) ExecuteFlow(ctx context.Context, flowID, msgType, data string
 		return "", fmt.Errorf("entryNode is required")
 	}
 	msg := types.NewMsg(msgType, types.JSON, data, nil)
+	dsl := ensureFlowDSLID(rec.PublishedDSL, flowID)
 	// 发布轨：忽略节点 Debug，不采集调试日志
-	out, _, err := e.Engine.ExecuteFromWithLogsOpts(ctx, rec.PublishedDSL, rec.PublishedDSL.EntryNode, msg, engine.ExecuteOptions{
+	out, _, err := e.Engine.ExecuteFromWithLogsOpts(ctx, dsl, dsl.EntryNode, msg, engine.ExecuteOptions{
 		CacheTrack: engine.CacheTrackPublished,
 	})
 	if err != nil {
@@ -66,7 +67,7 @@ func (e *Executor) ExecuteFromNode(ctx context.Context, flowID, nodeID, msgType,
 	if rec.PublishedDSL == nil {
 		return "", store.ErrNotPublished
 	}
-	dsl := rec.PublishedDSL
+	dsl := ensureFlowDSLID(rec.PublishedDSL, flowID)
 	if strings.TrimSpace(nodeID) == "" {
 		return "", fmt.Errorf("nodeId is required")
 	}
@@ -380,4 +381,19 @@ func nextNodeByRelation(dsl *types.FlowDSL, fromID, relation string) string {
 		}
 	}
 	return ""
+}
+
+// ensureFlowDSLID 保证 DSL.ID 与存储 flowID 一致，便于 mqttOut 查找托管客户端。
+func ensureFlowDSLID(dsl *types.FlowDSL, flowID string) *types.FlowDSL {
+	if dsl == nil {
+		return nil
+	}
+	if dsl.ID == flowID {
+		return dsl
+	}
+	out := *dsl
+	out.ID = flowID
+	out.Nodes = append([]types.FlowNode(nil), dsl.Nodes...)
+	out.Edges = append([]types.FlowEdge(nil), dsl.Edges...)
+	return &out
 }

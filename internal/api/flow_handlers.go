@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"strings"
 
@@ -94,6 +95,12 @@ func (s *Server) HandleSaveFlow(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.Exec != nil {
 		s.Exec.InvalidateFlowTrack(rec.ID, engine.CacheTrackDraft)
+	}
+	if s.Endpoints != nil {
+		if err := s.Endpoints.SyncDraftIfOpen(rec); err != nil {
+			// 草稿 MQTT 连接失败不阻断保存（属性仍已落库）
+			log.Printf("mqtt draft sync %s: %v", rec.ID, err)
+		}
 	}
 	if s.Hub != nil {
 		s.Hub.NotifyFlowChanged("saved", rec.ID, rec.Name, "api")

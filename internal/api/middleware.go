@@ -40,11 +40,13 @@ type PluginInstaller interface {
 	ForEachInstalled(fn func(id string, disabled bool, defs []types.ComponentDef))
 }
 
-// EndpointSync 流程保存/删除时同步 HTTP 入口监听。
+// EndpointSync 流程保存/删除时同步 HTTP / MQTT 入口。
 type EndpointSync interface {
 	// CheckHTTPRoutes 保存前校验同端口同路径冲突；冲突返回错误且不应落库。
 	CheckHTTPRoutes(flowID string, dsl *types.FlowDSL) error
 	SyncFlow(rec *store.FlowRecord) error
+	// SyncDraftIfOpen 仅当编辑器打开该流程时同步草稿 MQTT「连接并响应」。
+	SyncDraftIfOpen(rec *store.FlowRecord) error
 	RemoveFlow(flowID string)
 }
 
