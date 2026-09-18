@@ -133,6 +133,9 @@ func (s *Server) HandleGetComponentManage(w http.ResponseWriter, r *http.Request
 	byType := map[string]keyed{}
 
 	for _, d := range engine.DefaultRegistry.ListDefs() {
+		if d.HideInPalette {
+			continue
+		}
 		d.Category = components.NormalizeCategory(d.Category)
 		src := d.Source
 		if src == "" {
