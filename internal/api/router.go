@@ -47,6 +47,8 @@ func (s *Server) NewMux() http.Handler {
 	mux.Handle("PUT /api/flows/{id}/group", auth(http.HandlerFunc(s.HandleSetFlowGroup)))
 	mux.Handle("PUT /api/flows/{id}/lock", auth(http.HandlerFunc(s.HandleSetFlowLocked)))
 	mux.Handle("POST /api/flows/{id}/publish", auth(http.HandlerFunc(s.HandlePublishFlow)))
+	mux.Handle("POST /api/flows/{id}/offline", auth(http.HandlerFunc(s.HandleUnpublishFlow)))
+	mux.Handle("POST /api/flows/{id}/online", auth(http.HandlerFunc(s.HandleGoOnlineFlow)))
 	mux.Handle("POST /api/flows/{id}/discard-draft", auth(http.HandlerFunc(s.HandleDiscardDraft)))
 	mux.Handle("GET /api/flows/{id}/publish-history", auth(http.HandlerFunc(s.HandleListPublishHistory)))
 	mux.Handle("DELETE /api/flows/{id}/publish-history/{version}", auth(http.HandlerFunc(s.HandleDeletePublishHistory)))

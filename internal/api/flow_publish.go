@@ -26,7 +26,7 @@ func (s *Server) writeFlowStoreErr(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
-	if errors.Is(err, store.ErrNotPublished) || errors.Is(err, store.ErrNoPublished) || errors.Is(err, store.ErrHistoryNotFound) || errors.Is(err, store.ErrCannotDeleteLive) {
+	if errors.Is(err, store.ErrNotPublished) || errors.Is(err, store.ErrNoPublished) || errors.Is(err, store.ErrHistoryNotFound) || errors.Is(err, store.ErrCannotDeleteLive) || errors.Is(err, store.ErrNoPublishHistory) || errors.Is(err, store.ErrAlreadyOnline) {
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
@@ -93,6 +93,104 @@ func (s *Server) HandlePublishFlow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, rec)
+}
+
+// HandleUnpublishFlow POST /api/flows/{id}/offline
+// 下线：撤销当前发布（归档进历史），从内存卸载 HTTP；草稿与调试不受影响。
+func (s *Server) HandleUnpublishFlow(w http.ResponseWriter, r *http.Request) {
+	user := UserFromContext(r.Context())
+	id := r.PathValue("id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "missing id")
+		return
+	}
+	if !user.CanAccessFlow(id) {
+		writeError(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	rec, err := s.Store.GetFlow(id)
+	if err != nil {
+		s.writeFlowStoreErr(w, err)
+		return
+	}
+	if rec.Locked {
+		writeError(w, http.StatusConflict, "flow is locked")
+		return
+	}
+	rec, err = s.Store.UnpublishFlow(id)
+	if err != nil {
+		s.writeFlowStoreErr(w, err)
+		return
+	}
+	if err := s.afterOffline(rec); err != nil {
+		writeError(w, http.StatusBadRequest, "unpublished but unload failed: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, rec)
+}
+
+// HandleGoOnlineFlow POST /api/flows/{id}/online
+// 上线：从历史最近一条已发布快照恢复线上版并挂载 HTTP；无历史则拒绝。
+func (s *Server) HandleGoOnlineFlow(w http.ResponseWriter, r *http.Request) {
+	user := UserFromContext(r.Context())
+	id := r.PathValue("id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "missing id")
+		return
+	}
+	if !user.CanAccessFlow(id) {
+		writeError(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	rec, err := s.Store.GetFlow(id)
+	if err != nil {
+		s.writeFlowStoreErr(w, err)
+		return
+	}
+	if rec.Locked {
+		writeError(w, http.StatusConflict, "flow is locked")
+		return
+	}
+	if rec.Published {
+		writeError(w, http.StatusConflict, store.ErrAlreadyOnline.Error())
+		return
+	}
+	peek, err := s.Store.PeekLatestPublishDSL(id)
+	if err != nil {
+		s.writeFlowStoreErr(w, err)
+		return
+	}
+	if s.Endpoints != nil {
+		if err := s.Endpoints.CheckHTTPRoutes(id, peek); err != nil {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+	}
+	rec, err = s.Store.GoOnlineFromLatest(id)
+	if err != nil {
+		s.writeFlowStoreErr(w, err)
+		return
+	}
+	if err := s.afterPublish(rec); err != nil {
+		writeError(w, http.StatusBadRequest, "online but http endpoint failed: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, rec)
+}
+
+func (s *Server) afterOffline(rec *store.FlowRecord) error {
+	if s.Endpoints != nil {
+		if err := s.Endpoints.SyncFlow(rec); err != nil {
+			return err
+		}
+	}
+	if s.Exec != nil {
+		s.Exec.InvalidateFlowTrack(rec.ID, engine.CacheTrackPublished)
+	}
+	if s.Hub != nil {
+		s.Hub.NotifyFlowChanged("offline", rec.ID, rec.Name, "api")
+	}
+	return nil
 }
 
 // HandleDiscardDraft POST /api/flows/{id}/discard-draft

@@ -28,8 +28,10 @@ type FlowRecord struct {
 	PublishedDSL       *types.FlowDSL `json:"-"`
 	Published          bool           `json:"published"`
 	UnpublishedChanges bool           `json:"unpublishedChanges"`
-	PublishedAt        string         `json:"publishedAt,omitempty"`
-	PublishedVersion   int            `json:"publishedVersion,omitempty"`
+	// HasPublishHistory 历史中是否仍有可恢复的已发布快照（下线后用于判断能否再上线）。
+	HasPublishHistory bool   `json:"hasPublishHistory"`
+	PublishedAt       string `json:"publishedAt,omitempty"`
+	PublishedVersion  int    `json:"publishedVersion,omitempty"`
 	UpdatedAt          string         `json:"updatedAt"`
 	CreatedAt          string         `json:"createdAt"`
 }
@@ -271,6 +273,7 @@ func flowFromDoc(doc *document.Document) *FlowRecord {
 			rec.PublishedDSL = &dsl
 		}
 	}
+	rec.HasPublishHistory = len(readHistory(doc)) > 0
 	applyPublishStatus(rec)
 	return rec
 }
